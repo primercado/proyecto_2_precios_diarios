@@ -26,3 +26,9 @@ Carga en DuckDB o PostgreSQL
 Análisis con Python y SQL
     ↓
 Dashboard en Power BI
+```
+
+## Documentación técnica
+
+- [Extractor SEPA desde CKAN](docs/01_extractor_sepa_api.md)
+- [Estructura observada de archivos SEPA](docs/02_estructura_archivos_sepa.md)

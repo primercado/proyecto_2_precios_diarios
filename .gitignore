@@ -37,3 +37,6 @@ data/external/*
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Carpetas temporales de inspección
+data/tmp_inspect/
