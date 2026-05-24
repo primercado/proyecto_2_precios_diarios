@@ -1,0 +1,39 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Variables de entorno
+.env
+
+# Bases de datos locales
+*.duckdb
+*.db
+*.sqlite
+*.sqlite3
+
+# Datos pesados
+data/raw/*
+data/processed/*
+data/external/*
+
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+
+# Power BI
+*.pbix
+*.pbit
+
+# Sistema
+.DS_Store
+Thumbs.db

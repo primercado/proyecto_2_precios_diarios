@@ -1,0 +1,11 @@
+pandas
+polars
+duckdb
+pyarrow
+requests
+python-dotenv
+sqlalchemy
+psycopg2-binary
+jupyter
+matplotlib
+plotly
