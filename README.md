@@ -71,3 +71,15 @@ Referencias:
 
 - [App Streamlit](app/dashboard_precios.py)
 - [Documentacion de la app local](docs/05_app_streamlit_dashboard.md)
+
+## Calidad de precios y canasta exploratoria
+
+El dashboard suma reglas iniciales de calidad para marcar precios sospechosos,
+un buscador avanzado de productos comparables y una primera canasta exploratoria
+basada en busquedas por texto.
+
+Referencias:
+
+- [Reglas de calidad de precios](docs/06_reglas_calidad_precios.md)
+- [Mejoras del dashboard de calidad y canasta](docs/07_mejoras_dashboard_calidad_canasta.md)
+- [Consultas SQL de calidad](sql/05_queries_calidad_precios.sql)

@@ -168,6 +168,139 @@ MART_QUERIES: dict[str, str] = {
         WHERE s.sucursales_latitud IS NOT NULL
             AND s.sucursales_longitud IS NOT NULL
     """,
+    "mart_calidad_precios": """
+        CREATE OR REPLACE TABLE mart_calidad_precios AS
+        SELECT
+            f.fecha_publicacion,
+            COUNT(*) AS cantidad_registros,
+            COUNT(*) FILTER (WHERE f.productos_precio_lista IS NULL) AS cantidad_precio_nulo,
+            COUNT(*) FILTER (WHERE f.productos_precio_lista = 0) AS cantidad_precio_cero,
+            COUNT(*) FILTER (
+                WHERE f.productos_precio_lista > 0
+                    AND f.productos_precio_lista < 10
+            ) AS cantidad_precio_menor_10,
+            MIN(f.productos_precio_lista) AS precio_minimo,
+            MAX(f.productos_precio_lista) AS precio_maximo,
+            AVG(f.productos_precio_lista) AS precio_promedio
+        FROM fact_precios AS f
+        GROUP BY f.fecha_publicacion
+    """,
+    "mart_productos_comparables": """
+        CREATE OR REPLACE TABLE mart_productos_comparables AS
+        SELECT
+            f.fecha_publicacion,
+            f.id_producto,
+            f.productos_descripcion,
+            f.productos_marca,
+            f.productos_cantidad_presentacion,
+            f.productos_unidad_medida_presentacion,
+            COUNT(*) AS cantidad_registros,
+            MIN(f.productos_precio_lista) AS precio_minimo,
+            MAX(f.productos_precio_lista) AS precio_maximo,
+            AVG(f.productos_precio_lista) AS precio_promedio,
+            AVG(f.productos_precio_referencia) AS precio_referencia_promedio,
+            MAX(f.productos_precio_lista) - MIN(f.productos_precio_lista) AS diferencia_absoluta_max_min,
+            CASE
+                WHEN MIN(f.productos_precio_lista) > 0
+                    THEN ((MAX(f.productos_precio_lista) - MIN(f.productos_precio_lista)) / MIN(f.productos_precio_lista)) * 100
+                ELSE NULL
+            END AS diferencia_porcentual_max_min
+        FROM fact_precios AS f
+        WHERE f.productos_precio_lista IS NOT NULL
+        GROUP BY
+            f.fecha_publicacion,
+            f.id_producto,
+            f.productos_descripcion,
+            f.productos_marca,
+            f.productos_cantidad_presentacion,
+            f.productos_unidad_medida_presentacion
+    """,
+    "mart_precios_sospechosos": """
+        CREATE OR REPLACE TABLE mart_precios_sospechosos AS
+        SELECT *
+        FROM (
+            SELECT
+                f.fecha_publicacion,
+                f.id_producto,
+                f.productos_descripcion,
+                f.productos_marca,
+                f.productos_cantidad_presentacion,
+                f.productos_unidad_medida_presentacion,
+                f.productos_precio_lista,
+                f.productos_precio_referencia,
+                CASE
+                    WHEN f.productos_precio_lista <= 0 THEN 'precio_menor_o_igual_cero'
+                    WHEN f.productos_precio_lista < 10 THEN 'precio_menor_10'
+                    WHEN f.productos_precio_lista >= 100000 THEN 'precio_muy_alto'
+                    ELSE 'revisar'
+                END AS regla_calidad
+            FROM fact_precios AS f
+            WHERE f.productos_precio_lista <= 0
+                OR f.productos_precio_lista < 10
+                OR f.productos_precio_lista >= 100000
+        )
+        LIMIT 10000
+    """,
+    "mart_canasta_basica_candidatos": """
+        CREATE OR REPLACE TABLE mart_canasta_basica_candidatos AS
+        WITH candidatos AS (
+            SELECT
+                f.fecha_publicacion,
+                CASE
+                    WHEN f.productos_descripcion ILIKE '%LECHE%' THEN 'LECHE'
+                    WHEN f.productos_descripcion ILIKE '%ARROZ%' THEN 'ARROZ'
+                    WHEN f.productos_descripcion ILIKE '%FIDEO%' THEN 'FIDEO'
+                    WHEN f.productos_descripcion ILIKE '%YERBA%' THEN 'YERBA'
+                    WHEN f.productos_descripcion ILIKE '%ACEITE%' THEN 'ACEITE'
+                    WHEN f.productos_descripcion ILIKE '%AZUCAR%' THEN 'AZUCAR'
+                    WHEN f.productos_descripcion ILIKE '%HARINA%' THEN 'HARINA'
+                    WHEN f.productos_descripcion ILIKE '%HUEVO%' THEN 'HUEVO'
+                    ELSE NULL
+                END AS categoria_canasta,
+                f.id_producto,
+                f.productos_descripcion,
+                f.productos_marca,
+                f.productos_cantidad_presentacion,
+                f.productos_unidad_medida_presentacion,
+                f.productos_precio_lista,
+                f.productos_precio_referencia
+            FROM fact_precios AS f
+            WHERE f.productos_precio_lista IS NOT NULL
+                AND (
+                    f.productos_descripcion ILIKE '%LECHE%'
+                    OR f.productos_descripcion ILIKE '%ARROZ%'
+                    OR f.productos_descripcion ILIKE '%FIDEO%'
+                    OR f.productos_descripcion ILIKE '%YERBA%'
+                    OR f.productos_descripcion ILIKE '%ACEITE%'
+                    OR f.productos_descripcion ILIKE '%AZUCAR%'
+                    OR f.productos_descripcion ILIKE '%HARINA%'
+                    OR f.productos_descripcion ILIKE '%HUEVO%'
+                )
+        )
+        SELECT
+            fecha_publicacion,
+            categoria_canasta,
+            id_producto,
+            productos_descripcion,
+            productos_marca,
+            productos_cantidad_presentacion,
+            productos_unidad_medida_presentacion,
+            COUNT(*) AS cantidad_registros,
+            MIN(productos_precio_lista) AS precio_minimo,
+            MAX(productos_precio_lista) AS precio_maximo,
+            AVG(productos_precio_lista) AS precio_promedio,
+            AVG(productos_precio_referencia) AS precio_referencia_promedio
+        FROM candidatos
+        WHERE categoria_canasta IS NOT NULL
+        GROUP BY
+            fecha_publicacion,
+            categoria_canasta,
+            id_producto,
+            productos_descripcion,
+            productos_marca,
+            productos_cantidad_presentacion,
+            productos_unidad_medida_presentacion
+    """,
 }
 
 

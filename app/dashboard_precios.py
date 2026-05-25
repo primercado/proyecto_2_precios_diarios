@@ -24,6 +24,10 @@ REQUIRED_MARTS = (
     "mart_promociones",
     "mart_productos_mayor_dispersion",
     "mart_sucursales_geografia",
+    "mart_calidad_precios",
+    "mart_productos_comparables",
+    "mart_precios_sospechosos",
+    "mart_canasta_basica_candidatos",
 )
 
 SECTION_OPTIONS = (
@@ -34,6 +38,9 @@ SECTION_OPTIONS = (
     "E. Promociones",
     "F. Productos con mayor dispersion",
     "G. Sucursales georreferenciadas",
+    "H. Calidad de precios",
+    "I. Buscador avanzado",
+    "J. Canasta basica exploratoria",
 )
 
 
@@ -84,6 +91,19 @@ def get_existing_marts(con: duckdb.DuckDBPyConnection) -> set[str]:
         [list(REQUIRED_MARTS)],
     ).fetchall()
     return {row[0] for row in rows}
+
+
+def mart_exists(con: duckdb.DuckDBPyConnection, mart_name: str) -> bool:
+    row = con.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_schema = 'main'
+            AND table_name = ?
+        """,
+        [mart_name],
+    ).fetchone()
+    return bool(row and row[0] > 0)
 
 
 def get_publication_date(con: duckdb.DuckDBPyConnection) -> str:
@@ -202,6 +222,223 @@ def render_product_search(con: duckdb.DuckDBPyConnection) -> None:
         LIMIT ?
         """,
         [search_pattern, limit],
+    )
+    st.dataframe(df, use_container_width=True)
+
+
+def render_price_quality(con: duckdb.DuckDBPyConnection) -> None:
+    st.subheader("Calidad de precios")
+    st.markdown(
+        "Los precios sospechosos no se eliminan automaticamente; se marcan "
+        "para analisis y pueden requerir revision."
+    )
+
+    df = run_query(
+        con,
+        """
+        SELECT *
+        FROM mart_calidad_precios
+        ORDER BY fecha_publicacion DESC
+        """,
+    )
+    if df.empty:
+        st.warning("El mart de calidad de precios no tiene filas.")
+        return
+
+    row = df.iloc[0]
+    metrics = [
+        ("Precios cero", "cantidad_precio_cero"),
+        ("Precios menores a 10", "cantidad_precio_menor_10"),
+        ("Precio minimo", "precio_minimo"),
+        ("Precio maximo", "precio_maximo"),
+        ("Precio promedio", "precio_promedio"),
+    ]
+    cols = st.columns(len(metrics))
+    for index, (label, column) in enumerate(metrics):
+        cols[index].metric(label, format_number(row[column]))
+
+    st.dataframe(df, use_container_width=True)
+
+    if mart_exists(con, "mart_precios_sospechosos"):
+        suspicious_df = run_query(
+            con,
+            """
+            SELECT
+                fecha_publicacion,
+                regla_calidad,
+                id_producto,
+                productos_descripcion,
+                productos_marca,
+                productos_cantidad_presentacion,
+                productos_unidad_medida_presentacion,
+                productos_precio_lista,
+                productos_precio_referencia
+            FROM mart_precios_sospechosos
+            LIMIT 1000
+            """,
+        )
+        st.markdown("Registros marcados para revision")
+        st.dataframe(suspicious_df, use_container_width=True)
+
+
+def render_advanced_product_search(con: duckdb.DuckDBPyConnection) -> None:
+    st.subheader("Buscador avanzado")
+    st.markdown("Comparar productos requiere revisar presentacion y unidad de medida.")
+
+    brand_options = run_query(
+        con,
+        """
+        SELECT DISTINCT productos_marca
+        FROM mart_productos_comparables
+        WHERE productos_marca IS NOT NULL
+            AND productos_marca <> ''
+        ORDER BY productos_marca
+        LIMIT 1000
+        """,
+    )["productos_marca"].tolist()
+    unit_options = run_query(
+        con,
+        """
+        SELECT DISTINCT productos_unidad_medida_presentacion
+        FROM mart_productos_comparables
+        WHERE productos_unidad_medida_presentacion IS NOT NULL
+            AND productos_unidad_medida_presentacion <> ''
+        ORDER BY productos_unidad_medida_presentacion
+        """,
+    )["productos_unidad_medida_presentacion"].tolist()
+
+    col_a, col_b, col_c = st.columns(3)
+    product_text = col_a.text_input("Texto de busqueda", value="LECHE")
+    selected_brand = col_b.selectbox("Marca", ["Todas"] + brand_options)
+    selected_unit = col_c.selectbox("Unidad de medida", ["Todas"] + unit_options)
+
+    col_d, col_e, col_f = st.columns(3)
+    max_price = col_d.number_input(
+        "Precio maximo opcional",
+        min_value=0.0,
+        value=0.0,
+        step=100.0,
+        help="Usa 0 para no aplicar filtro.",
+    )
+    min_records = col_e.number_input(
+        "Cantidad minima de registros",
+        min_value=1,
+        value=20,
+        step=1,
+    )
+    limit = col_f.slider("Limite de resultados", min_value=10, max_value=1000, value=100, step=10)
+
+    where_clauses = ["cantidad_registros >= ?"]
+    params: list[object] = [int(min_records)]
+    if product_text.strip():
+        where_clauses.append("productos_descripcion ILIKE ?")
+        params.append(f"%{product_text.strip()}%")
+    if selected_brand != "Todas":
+        where_clauses.append("productos_marca = ?")
+        params.append(selected_brand)
+    if selected_unit != "Todas":
+        where_clauses.append("productos_unidad_medida_presentacion = ?")
+        params.append(selected_unit)
+    if max_price > 0:
+        where_clauses.append("precio_minimo <= ?")
+        params.append(float(max_price))
+    params.append(int(limit))
+
+    columns = [
+        "productos_descripcion",
+        "productos_marca",
+        "productos_cantidad_presentacion",
+        "productos_unidad_medida_presentacion",
+        "cantidad_registros",
+        "precio_minimo",
+        "precio_maximo",
+        "precio_promedio",
+        "precio_referencia_promedio",
+        "diferencia_porcentual_max_min",
+    ]
+    df = run_query(
+        con,
+        f"""
+        SELECT {", ".join(columns)}
+        FROM mart_productos_comparables
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY precio_minimo ASC NULLS LAST, cantidad_registros DESC
+        LIMIT ?
+        """,
+        params,
+    )
+    st.dataframe(df, use_container_width=True)
+
+
+def render_basic_basket_candidates(con: duckdb.DuckDBPyConnection) -> None:
+    st.subheader("Canasta basica exploratoria")
+    st.markdown(
+        "Esta canasta es exploratoria y se basa en busquedas por texto. No "
+        "representa una canasta oficial ni garantiza equivalencia perfecta "
+        "entre productos."
+    )
+
+    categories = [
+        "LECHE",
+        "ARROZ",
+        "FIDEO",
+        "YERBA",
+        "ACEITE",
+        "AZUCAR",
+        "HARINA",
+        "HUEVO",
+    ]
+    selected_categories = st.multiselect(
+        "Categorias de canasta",
+        categories,
+        default=categories,
+    )
+    limit_per_category = st.slider(
+        "Candidatos por categoria",
+        min_value=5,
+        max_value=100,
+        value=20,
+        step=5,
+    )
+
+    if not selected_categories:
+        st.info("Selecciona al menos una categoria.")
+        return
+
+    df = run_query(
+        con,
+        """
+        WITH ordenados AS (
+            SELECT
+                categoria_canasta,
+                productos_descripcion,
+                productos_marca,
+                productos_cantidad_presentacion,
+                productos_unidad_medida_presentacion,
+                precio_minimo,
+                precio_promedio,
+                cantidad_registros,
+                row_number() OVER (
+                    PARTITION BY categoria_canasta
+                    ORDER BY precio_minimo ASC NULLS LAST, cantidad_registros DESC
+                ) AS orden_categoria
+            FROM mart_canasta_basica_candidatos
+            WHERE categoria_canasta = ANY(?)
+        )
+        SELECT
+            categoria_canasta,
+            productos_descripcion,
+            productos_marca,
+            productos_cantidad_presentacion,
+            productos_unidad_medida_presentacion,
+            precio_minimo,
+            precio_promedio,
+            cantidad_registros
+        FROM ordenados
+        WHERE orden_categoria <= ?
+        ORDER BY categoria_canasta, precio_minimo ASC NULLS LAST
+        """,
+        [selected_categories, int(limit_per_category)],
     )
     st.dataframe(df, use_container_width=True)
 
@@ -404,6 +641,12 @@ def main() -> None:
         render_price_dispersion(con)
     elif section == "G. Sucursales georreferenciadas":
         render_georeferenced_stores(con)
+    elif section == "H. Calidad de precios":
+        render_price_quality(con)
+    elif section == "I. Buscador avanzado":
+        render_advanced_product_search(con)
+    elif section == "J. Canasta basica exploratoria":
+        render_basic_basket_candidates(con)
 
 
 if __name__ == "__main__":
