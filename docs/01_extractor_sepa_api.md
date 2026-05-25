@@ -63,6 +63,7 @@ Guardado en data/raw/
 - Representar los recursos con la dataclass `SepaResource`.
 - Identificar recursos ZIP por formato o por extensión de URL.
 - Seleccionar el recurso ZIP más reciente usando fechas de metadata y, como apoyo, fechas presentes en el nombre.
+- Listar fechas disponibles detectadas en los recursos ZIP publicados.
 - Descargar el archivo por partes para evitar cargar archivos grandes completos en memoria.
 - Escribir primero en un archivo temporal `.tmp`.
 - Reemplazar el archivo final solo cuando la descarga termina correctamente.
@@ -121,6 +122,14 @@ La función `_ckan_get()` centraliza la llamada HTTP a CKAN:
 
 La función `list_resources()` usa `_ckan_get("package_show", {"id": dataset_id})` y transforma cada recurso crudo en un objeto `SepaResource`.
 
+### Fechas disponibles
+
+`list_available_dates()` recibe una lista de recursos y devuelve las fechas de publicación detectadas en recursos ZIP.
+
+El criterio usa fechas con formato `YYYY-MM-DD` encontradas en el nombre del recurso o en la URL. Si CKAN no publica la fecha en esos campos, usa como respaldo `last_modified`, `metadata_modified` o `created`.
+
+La salida no incluye duplicados y queda ordenada de menor a mayor.
+
 ### Selección del ZIP más reciente
 
 `latest_zip_resource()` recibe una lista de recursos y selecciona el ZIP más reciente.
@@ -155,6 +164,12 @@ Listar recursos disponibles:
 python -m src.extract.sepa_api --list
 ```
 
+Listar fechas disponibles en recursos ZIP:
+
+```bash
+python -m src.extract.sepa_api --list-dates
+```
+
 Descargar el ZIP más reciente en `data/raw/`:
 
 ```bash
@@ -182,11 +197,13 @@ python -m src.extract.sepa_api --list --dataset-id sepa-precios
 ## Uso desde Python
 
 ```python
-from src.extract.sepa_api import download_latest_zip, list_resources
+from src.extract.sepa_api import download_latest_zip, list_available_dates, list_resources
 
 resources = list_resources()
+available_dates = list_available_dates(resources)
 zip_path = download_latest_zip()
 
+print(available_dates)
 print(zip_path)
 ```
 

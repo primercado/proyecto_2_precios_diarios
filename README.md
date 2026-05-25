@@ -58,6 +58,7 @@ Comandos por etapa:
 
 ```bash
 python -m src.extract.sepa_api --list
+python -m src.extract.sepa_api --list-dates
 python -m src.extract.sepa_api --download
 python -m src.extract.sepa_api --date 2026-05-23
 

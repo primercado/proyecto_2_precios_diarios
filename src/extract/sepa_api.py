@@ -2,6 +2,7 @@
 
 Uso:
     python -m src.extract.sepa_api --list
+    python -m src.extract.sepa_api --list-dates
     python -m src.extract.sepa_api --download
     python -m src.extract.sepa_api --date 2026-05-23
 """
@@ -129,6 +130,19 @@ def zip_resource_for_date(resources: list[SepaResource], publication_date: date)
     return max(dated_resources, key=_resource_sort_key)
 
 
+def list_available_dates(resources: list[SepaResource]) -> list[date]:
+    """Lista fechas de publicacion disponibles para recursos ZIP de SEPA."""
+
+    available_dates = {
+        publication_date
+        for resource in resources
+        if resource.is_zip and resource.url
+        for publication_date in [_resource_publication_date(resource)]
+        if publication_date is not None
+    }
+    return sorted(available_dates)
+
+
 def download_resource(
     resource: SepaResource,
     output_dir: Path | str = DEFAULT_RAW_DIR,
@@ -252,6 +266,13 @@ def _resource_publication_date(resource: SepaResource) -> date | None:
         parsed = _parse_date_from_text(value)
         if parsed != datetime.min.replace(tzinfo=timezone.utc):
             return parsed.date()
+
+    metadata_date = _parse_ckan_datetime(
+        resource.last_modified or resource.metadata_modified or resource.created
+    )
+    if metadata_date != datetime.min.replace(tzinfo=timezone.utc):
+        return metadata_date.date()
+
     return None
 
 
@@ -280,6 +301,15 @@ def _print_resources(resources: list[SepaResource]) -> None:
         print(f"{marker:12} {modified:26} {resource.name} ({resource.id})")
 
 
+def _print_available_dates(resources: list[SepaResource]) -> None:
+    available_dates = list_available_dates(resources)
+    for publication_date in available_dates:
+        print(publication_date.isoformat())
+
+    if not available_dates:
+        print("No se encontraron fechas disponibles en recursos ZIP.")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Extractor de recursos SEPA desde CKAN.")
     parser.add_argument(
@@ -296,6 +326,11 @@ def parse_args() -> argparse.Namespace:
         "--list",
         action="store_true",
         help="Lista los recursos disponibles del dataset.",
+    )
+    parser.add_argument(
+        "--list-dates",
+        action="store_true",
+        help="Lista fechas disponibles detectadas en recursos ZIP.",
     )
     parser.add_argument(
         "--download",
@@ -322,7 +357,10 @@ def main() -> None:
     args = parse_args()
 
     resources = list_resources(args.dataset_id)
-    if args.list or (not args.download and args.date is None):
+    if args.list_dates:
+        _print_available_dates(resources)
+
+    if args.list or (not args.list_dates and not args.download and args.date is None):
         _print_resources(resources)
 
     if args.download or args.date is not None:
