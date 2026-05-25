@@ -113,6 +113,35 @@ Referencias:
 - [App Streamlit](app/dashboard_precios.py)
 - [Documentacion de la app local](docs/05_app_streamlit_dashboard.md)
 
+## Evolución temporal y comparación entre fechas
+
+La app Streamlit incluye secciones para comparar dos fechas, ver productos que
+mas subieron o bajaron y revisar la evolucion de un producto seleccionado. Estas
+vistas usan marts materializados en DuckDB para no consultar `fact_precios`
+directamente desde la app.
+
+Crear mart de evolucion por producto:
+
+```bash
+python -m src.analysis.create_dashboard_tables --db data/processed/precios_diarios.duckdb --only-mart mart_evolucion_productos
+```
+
+Crear mart de variacion contra la fecha anterior disponible:
+
+```bash
+python -m src.analysis.create_dashboard_tables --db data/processed/precios_diarios.duckdb --only-mart mart_variacion_productos
+```
+
+Ejecutar la app:
+
+```bash
+streamlit run app/dashboard_precios.py
+```
+
+Referencia:
+
+- [Evolucion temporal en el dashboard](docs/10_evolucion_temporal_dashboard.md)
+
 ## Calidad de precios y canasta exploratoria
 
 El dashboard suma reglas iniciales de calidad para marcar precios sospechosos,
@@ -124,3 +153,33 @@ Referencias:
 - [Reglas de calidad de precios](docs/06_reglas_calidad_precios.md)
 - [Mejoras del dashboard de calidad y canasta](docs/07_mejoras_dashboard_calidad_canasta.md)
 - [Consultas SQL de calidad](sql/05_queries_calidad_precios.sql)
+
+## Presentación para portfolio
+
+La app Streamlit funciona como comparador exploratorio de precios diarios SEPA para mostrar el proyecto en GitHub y LinkedIn. Permite recorrer métricas generales, comparar comercios y ubicaciones, buscar productos, detectar promociones, revisar calidad de datos y analizar cambios entre fechas.
+
+Secciones principales de la app:
+
+- Sobre el proyecto
+- Resumen general
+- Precios por comercio
+- Buscador de productos
+- Precios por ubicación
+- Promociones
+- Mayor dispersión
+- Sucursales georreferenciadas
+- Calidad de precios
+- Buscador avanzado
+- Canasta básica exploratoria
+- Comparación entre fechas
+- Evolución de producto
+
+Ejecutar:
+
+```bash
+streamlit run app/dashboard_precios.py
+```
+
+Referencia:
+
+- [Pulido de interfaz para portfolio](docs/11_pulido_interfaz_portfolio.md)
