@@ -3,6 +3,7 @@
 Uso:
     python -m src.extract.sepa_api --list
     python -m src.extract.sepa_api --download
+    python -m src.extract.sepa_api --date 2026-05-23
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 import argparse
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -109,6 +110,25 @@ def latest_zip_resource(resources: list[SepaResource]) -> SepaResource:
     return max(zip_resources, key=_resource_sort_key)
 
 
+def zip_resource_for_date(resources: list[SepaResource], publication_date: date) -> SepaResource:
+    """Devuelve el recurso ZIP que corresponde a una fecha de publicacion."""
+
+    dated_resources = [
+        resource
+        for resource in resources
+        if resource.is_zip
+        and resource.url
+        and _resource_publication_date(resource) == publication_date
+    ]
+    if not dated_resources:
+        raise SepaApiError(
+            "No se encontro un recurso ZIP para la fecha "
+            f"{publication_date.isoformat()}."
+        )
+
+    return max(dated_resources, key=_resource_sort_key)
+
+
 def download_resource(
     resource: SepaResource,
     output_dir: Path | str = DEFAULT_RAW_DIR,
@@ -167,6 +187,27 @@ def download_latest_zip(
     )
 
 
+def download_zip_for_date(
+    publication_date: date,
+    dataset_id: str = SEPA_MINORISTAS_DATASET,
+    output_dir: Path | str = DEFAULT_RAW_DIR,
+    *,
+    api_base_url: str = CKAN_API_BASE_URL,
+    overwrite: bool = False,
+    session: requests.Session | None = None,
+) -> Path:
+    """Lista recursos, elige el ZIP de la fecha indicada y lo descarga."""
+
+    resources = list_resources(dataset_id, api_base_url=api_base_url, session=session)
+    dated_resource = zip_resource_for_date(resources, publication_date)
+    return download_resource(
+        dated_resource,
+        output_dir,
+        overwrite=overwrite,
+        session=session,
+    )
+
+
 def _resource_sort_key(resource: SepaResource) -> tuple[datetime, datetime]:
     metadata_date = _parse_ckan_datetime(
         resource.last_modified or resource.metadata_modified or resource.created
@@ -204,6 +245,23 @@ def _parse_date_from_text(value: str) -> datetime:
         )
     except ValueError:
         return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _resource_publication_date(resource: SepaResource) -> date | None:
+    for value in (resource.name, resource.url):
+        parsed = _parse_date_from_text(value)
+        if parsed != datetime.min.replace(tzinfo=timezone.utc):
+            return parsed.date()
+    return None
+
+
+def _parse_publication_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "La fecha debe tener formato YYYY-MM-DD."
+        ) from exc
 
 
 def _filename_for_resource(resource: SepaResource) -> str:
@@ -245,6 +303,14 @@ def parse_args() -> argparse.Namespace:
         help="Descarga el ZIP mas reciente en el directorio de salida.",
     )
     parser.add_argument(
+        "--date",
+        type=_parse_publication_date,
+        help=(
+            "Descarga el ZIP correspondiente a la fecha indicada "
+            "(formato YYYY-MM-DD)."
+        ),
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Sobrescribe el archivo local si ya existe.",
@@ -256,16 +322,16 @@ def main() -> None:
     args = parse_args()
 
     resources = list_resources(args.dataset_id)
-    if args.list or not args.download:
+    if args.list or (not args.download and args.date is None):
         _print_resources(resources)
 
-    if args.download:
-        latest_resource = latest_zip_resource(resources)
-        destination = download_resource(
-            latest_resource,
-            args.output_dir,
-            overwrite=args.overwrite,
+    if args.download or args.date is not None:
+        resource = (
+            zip_resource_for_date(resources, args.date)
+            if args.date is not None
+            else latest_zip_resource(resources)
         )
+        destination = download_resource(resource, args.output_dir, overwrite=args.overwrite)
         print(f"Descargado: {destination}")
 
 

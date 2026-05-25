@@ -113,14 +113,31 @@ def get_publication_date(con: duckdb.DuckDBPyConnection) -> str:
     return str(result[0]) if result and result[0] is not None else "Sin fecha"
 
 
+def get_publication_dates(con: duckdb.DuckDBPyConnection) -> list[str]:
+    rows = con.execute(
+        """
+        SELECT DISTINCT fecha_publicacion
+        FROM mart_resumen_general
+        WHERE fecha_publicacion IS NOT NULL
+        ORDER BY fecha_publicacion DESC
+        """
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
 def render_sidebar(
     con: duckdb.DuckDBPyConnection,
     db_status: str,
-) -> str:
+) -> tuple[str, str]:
     st.sidebar.header("Datos")
     st.sidebar.write(f"Estado de la base: **{db_status}**")
-    st.sidebar.write(f"Fecha de publicacion: **{get_publication_date(con)}**")
-    return st.sidebar.selectbox("Seccion", SECTION_OPTIONS)
+    date_options = get_publication_dates(con)
+    selected_date = st.sidebar.selectbox(
+        "Fecha de publicacion",
+        date_options or [get_publication_date(con)],
+    )
+    section = st.sidebar.selectbox("Seccion", SECTION_OPTIONS)
+    return section, selected_date
 
 
 def render_plotly_bar(
@@ -139,9 +156,18 @@ def render_plotly_bar(
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_summary(con: duckdb.DuckDBPyConnection) -> None:
+def render_summary(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Resumen general")
-    df = run_query(con, "SELECT * FROM mart_resumen_general ORDER BY fecha_publicacion DESC")
+    df = run_query(
+        con,
+        """
+        SELECT *
+        FROM mart_resumen_general
+        WHERE fecha_publicacion = ?
+        ORDER BY fecha_publicacion DESC
+        """,
+        [selected_date],
+    )
 
     if df.empty:
         st.warning("El mart de resumen general no tiene filas.")
@@ -165,7 +191,7 @@ def render_summary(con: duckdb.DuckDBPyConnection) -> None:
     st.dataframe(df, use_container_width=True)
 
 
-def render_prices_by_store(con: duckdb.DuckDBPyConnection) -> None:
+def render_prices_by_store(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Precios por comercio")
     columns = [
         "comercio_bandera_nombre",
@@ -181,9 +207,11 @@ def render_prices_by_store(con: duckdb.DuckDBPyConnection) -> None:
         f"""
         SELECT {", ".join(columns)}
         FROM mart_precios_por_comercio
+        WHERE fecha_publicacion = ?
         ORDER BY cantidad_productos DESC, comercio_bandera_nombre
         LIMIT 100
         """,
+        [selected_date],
     )
     st.dataframe(df, use_container_width=True)
     render_plotly_bar(
@@ -194,7 +222,7 @@ def render_prices_by_store(con: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def render_product_search(con: duckdb.DuckDBPyConnection) -> None:
+def render_product_search(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Buscador de productos")
     product_text = st.text_input("producto_buscado", value="COCA COLA")
     limit = st.slider("Limite de resultados", min_value=10, max_value=500, value=100, step=10)
@@ -217,16 +245,17 @@ def render_product_search(con: duckdb.DuckDBPyConnection) -> None:
         f"""
         SELECT {", ".join(columns)}
         FROM mart_resumen_productos
-        WHERE productos_descripcion ILIKE ?
+        WHERE fecha_publicacion = ?
+            AND productos_descripcion ILIKE ?
         ORDER BY precio_minimo ASC NULLS LAST
         LIMIT ?
         """,
-        [search_pattern, limit],
+        [selected_date, search_pattern, limit],
     )
     st.dataframe(df, use_container_width=True)
 
 
-def render_price_quality(con: duckdb.DuckDBPyConnection) -> None:
+def render_price_quality(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Calidad de precios")
     st.markdown(
         "Los precios sospechosos no se eliminan automaticamente; se marcan "
@@ -238,8 +267,10 @@ def render_price_quality(con: duckdb.DuckDBPyConnection) -> None:
         """
         SELECT *
         FROM mart_calidad_precios
+        WHERE fecha_publicacion = ?
         ORDER BY fecha_publicacion DESC
         """,
+        [selected_date],
     )
     if df.empty:
         st.warning("El mart de calidad de precios no tiene filas.")
@@ -274,14 +305,16 @@ def render_price_quality(con: duckdb.DuckDBPyConnection) -> None:
                 productos_precio_lista,
                 productos_precio_referencia
             FROM mart_precios_sospechosos
+            WHERE fecha_publicacion = ?
             LIMIT 1000
             """,
+            [selected_date],
         )
         st.markdown("Registros marcados para revision")
         st.dataframe(suspicious_df, use_container_width=True)
 
 
-def render_advanced_product_search(con: duckdb.DuckDBPyConnection) -> None:
+def render_advanced_product_search(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Buscador avanzado")
     st.markdown("Comparar productos requiere revisar presentacion y unidad de medida.")
 
@@ -290,21 +323,25 @@ def render_advanced_product_search(con: duckdb.DuckDBPyConnection) -> None:
         """
         SELECT DISTINCT productos_marca
         FROM mart_productos_comparables
-        WHERE productos_marca IS NOT NULL
+        WHERE fecha_publicacion = ?
+            AND productos_marca IS NOT NULL
             AND productos_marca <> ''
         ORDER BY productos_marca
         LIMIT 1000
         """,
+        [selected_date],
     )["productos_marca"].tolist()
     unit_options = run_query(
         con,
         """
         SELECT DISTINCT productos_unidad_medida_presentacion
         FROM mart_productos_comparables
-        WHERE productos_unidad_medida_presentacion IS NOT NULL
+        WHERE fecha_publicacion = ?
+            AND productos_unidad_medida_presentacion IS NOT NULL
             AND productos_unidad_medida_presentacion <> ''
         ORDER BY productos_unidad_medida_presentacion
         """,
+        [selected_date],
     )["productos_unidad_medida_presentacion"].tolist()
 
     col_a, col_b, col_c = st.columns(3)
@@ -328,8 +365,8 @@ def render_advanced_product_search(con: duckdb.DuckDBPyConnection) -> None:
     )
     limit = col_f.slider("Limite de resultados", min_value=10, max_value=1000, value=100, step=10)
 
-    where_clauses = ["cantidad_registros >= ?"]
-    params: list[object] = [int(min_records)]
+    where_clauses = ["fecha_publicacion = ?", "cantidad_registros >= ?"]
+    params: list[object] = [selected_date, int(min_records)]
     if product_text.strip():
         where_clauses.append("productos_descripcion ILIKE ?")
         params.append(f"%{product_text.strip()}%")
@@ -370,7 +407,7 @@ def render_advanced_product_search(con: duckdb.DuckDBPyConnection) -> None:
     st.dataframe(df, use_container_width=True)
 
 
-def render_basic_basket_candidates(con: duckdb.DuckDBPyConnection) -> None:
+def render_basic_basket_candidates(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Canasta basica exploratoria")
     st.markdown(
         "Esta canasta es exploratoria y se basa en busquedas por texto. No "
@@ -423,7 +460,8 @@ def render_basic_basket_candidates(con: duckdb.DuckDBPyConnection) -> None:
                     ORDER BY precio_minimo ASC NULLS LAST, cantidad_registros DESC
                 ) AS orden_categoria
             FROM mart_canasta_basica_candidatos
-            WHERE categoria_canasta = ANY(?)
+            WHERE fecha_publicacion = ?
+                AND categoria_canasta = ANY(?)
         )
         SELECT
             categoria_canasta,
@@ -438,21 +476,23 @@ def render_basic_basket_candidates(con: duckdb.DuckDBPyConnection) -> None:
         WHERE orden_categoria <= ?
         ORDER BY categoria_canasta, precio_minimo ASC NULLS LAST
         """,
-        [selected_categories, int(limit_per_category)],
+        [selected_date, selected_categories, int(limit_per_category)],
     )
     st.dataframe(df, use_container_width=True)
 
 
-def render_prices_by_location(con: duckdb.DuckDBPyConnection) -> None:
+def render_prices_by_location(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Precios por ubicacion")
     province_options = run_query(
         con,
         """
         SELECT DISTINCT sucursales_provincia
         FROM mart_precios_por_ubicacion
-        WHERE sucursales_provincia IS NOT NULL
+        WHERE fecha_publicacion = ?
+            AND sucursales_provincia IS NOT NULL
         ORDER BY sucursales_provincia
         """,
+        [selected_date],
     )["sucursales_provincia"].tolist()
 
     selected_province = st.selectbox("Provincia", ["Todas"] + province_options)
@@ -465,17 +505,18 @@ def render_prices_by_location(con: duckdb.DuckDBPyConnection) -> None:
             """
             SELECT DISTINCT sucursales_localidad
             FROM mart_precios_por_ubicacion
-            WHERE sucursales_provincia = ?
+            WHERE fecha_publicacion = ?
+                AND sucursales_provincia = ?
                 AND sucursales_localidad IS NOT NULL
             ORDER BY sucursales_localidad
             """,
-            [selected_province],
+            [selected_date, selected_province],
         )["sucursales_localidad"].tolist()
 
     selected_locality = st.selectbox("Localidad", ["Todas"] + locality_options)
 
-    where_clauses = []
-    params: list[object] = []
+    where_clauses = ["fecha_publicacion = ?"]
+    params: list[object] = [selected_date]
     if selected_province != "Todas":
         where_clauses.append("sucursales_provincia = ?")
         params.append(selected_province)
@@ -513,7 +554,7 @@ def render_prices_by_location(con: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def render_promotions(con: duckdb.DuckDBPyConnection) -> None:
+def render_promotions(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Promociones")
     columns = [
         "productos_descripcion",
@@ -529,16 +570,18 @@ def render_promotions(con: duckdb.DuckDBPyConnection) -> None:
         f"""
         SELECT {", ".join(columns)}
         FROM mart_promociones
+        WHERE fecha_publicacion = ?
         ORDER BY
             (cantidad_registros_con_promo1 + cantidad_registros_con_promo2) DESC,
             productos_descripcion
         LIMIT 300
         """,
+        [selected_date],
     )
     st.dataframe(df, use_container_width=True)
 
 
-def render_price_dispersion(con: duckdb.DuckDBPyConnection) -> None:
+def render_price_dispersion(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Productos con mayor dispersion")
     st.markdown(
         "Una alta dispersion puede deberse a productos mal comparados, distintas "
@@ -560,15 +603,16 @@ def render_price_dispersion(con: duckdb.DuckDBPyConnection) -> None:
         f"""
         SELECT {", ".join(columns)}
         FROM mart_productos_mayor_dispersion
+        WHERE fecha_publicacion = ?
         ORDER BY diferencia_absoluta_max_min DESC, cantidad_registros DESC
         LIMIT ?
         """,
-        [limit],
+        [selected_date, limit],
     )
     st.dataframe(df, use_container_width=True)
 
 
-def render_georeferenced_stores(con: duckdb.DuckDBPyConnection) -> None:
+def render_georeferenced_stores(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
     st.subheader("Sucursales georreferenciadas")
     columns = [
         "comercio_bandera_nombre",
@@ -583,9 +627,11 @@ def render_georeferenced_stores(con: duckdb.DuckDBPyConnection) -> None:
         f"""
         SELECT {", ".join(columns)}
         FROM mart_sucursales_geografia
+        WHERE fecha_publicacion = ?
         ORDER BY sucursales_provincia, sucursales_localidad, comercio_bandera_nombre
         LIMIT 5000
         """,
+        [selected_date],
     )
     st.dataframe(df, use_container_width=True)
 
@@ -625,28 +671,28 @@ def main() -> None:
         )
         return
 
-    section = render_sidebar(con, "Disponible")
+    section, selected_date = render_sidebar(con, "Disponible")
 
     if section == "A. Resumen general":
-        render_summary(con)
+        render_summary(con, selected_date)
     elif section == "B. Precios por comercio":
-        render_prices_by_store(con)
+        render_prices_by_store(con, selected_date)
     elif section == "C. Buscador de productos":
-        render_product_search(con)
+        render_product_search(con, selected_date)
     elif section == "D. Precios por ubicacion":
-        render_prices_by_location(con)
+        render_prices_by_location(con, selected_date)
     elif section == "E. Promociones":
-        render_promotions(con)
+        render_promotions(con, selected_date)
     elif section == "F. Productos con mayor dispersion":
-        render_price_dispersion(con)
+        render_price_dispersion(con, selected_date)
     elif section == "G. Sucursales georreferenciadas":
-        render_georeferenced_stores(con)
+        render_georeferenced_stores(con, selected_date)
     elif section == "H. Calidad de precios":
-        render_price_quality(con)
+        render_price_quality(con, selected_date)
     elif section == "I. Buscador avanzado":
-        render_advanced_product_search(con)
+        render_advanced_product_search(con, selected_date)
     elif section == "J. Canasta basica exploratoria":
-        render_basic_basket_candidates(con)
+        render_basic_basket_candidates(con, selected_date)
 
 
 if __name__ == "__main__":

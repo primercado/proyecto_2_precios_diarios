@@ -28,6 +28,46 @@ Análisis con Python y SQL
 Dashboard en Power BI
 ```
 
+## Pipeline historico incremental
+
+El proyecto puede cargar varios dias en la misma base DuckDB sin duplicar fechas ya procesadas. Cada ejecucion queda registrada en `control_ingestas`.
+
+Ejecutar pipeline completo para una fecha:
+
+```bash
+python -m src.pipeline.run_daily_pipeline --date 2026-05-23
+```
+
+Usar un ZIP ya descargado:
+
+```bash
+python -m src.pipeline.run_daily_pipeline \
+  --date 2026-05-23 \
+  --zip data/raw/sepa_2026-05-23.zip
+```
+
+Si una fecha ya existe, la carga incremental la omite. Para rehacer una fecha:
+
+```bash
+python -m src.pipeline.run_daily_pipeline \
+  --date 2026-05-23 \
+  --reload-existing-dates
+```
+
+Comandos por etapa:
+
+```bash
+python -m src.extract.sepa_api --list
+python -m src.extract.sepa_api --download
+python -m src.extract.sepa_api --date 2026-05-23
+
+python -m src.load.load_duckdb \
+  --zip data/raw/sepa_2026-05-23.zip \
+  --db data/processed/precios_diarios.duckdb \
+  --append \
+  --date 2026-05-23
+```
+
 ## Documentación técnica
 
 - [Extractor SEPA desde CKAN](docs/01_extractor_sepa_api.md)
