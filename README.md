@@ -56,3 +56,18 @@ Referencias:
 - [Consultas SQL para dashboard](sql/04_queries_dashboard_duckdb.sql)
 - [Script de creación de marts](src/analysis/create_dashboard_tables.py)
 - [Documentación de la capa analítica](docs/04_capa_analitica_dashboard.md)
+
+## App local en Streamlit
+
+El proyecto incluye una primera app local en Streamlit para explorar desde el navegador los marts analiticos generados en DuckDB.
+
+Ejecutar:
+
+```bash
+streamlit run app/dashboard_precios.py
+```
+
+Referencias:
+
+- [App Streamlit](app/dashboard_precios.py)
+- [Documentacion de la app local](docs/05_app_streamlit_dashboard.md)
