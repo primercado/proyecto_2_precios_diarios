@@ -170,6 +170,12 @@ Listar fechas disponibles en recursos ZIP:
 python -m src.extract.sepa_api --list-dates
 ```
 
+Listar fechas disponibles dentro de los últimos 5 días publicados:
+
+```bash
+python -m src.extract.sepa_api --last-days 5
+```
+
 Descargar el ZIP más reciente en `data/raw/`:
 
 ```bash

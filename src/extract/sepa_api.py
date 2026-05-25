@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -128,6 +128,53 @@ def zip_resource_for_date(resources: list[SepaResource], publication_date: date)
         )
 
     return max(dated_resources, key=_resource_sort_key)
+
+
+def zip_resources_between_dates(
+    resources: list[SepaResource],
+    start_date: date,
+    end_date: date,
+) -> list[tuple[date, SepaResource]]:
+    """Devuelve un ZIP por fecha disponible dentro del rango indicado."""
+
+    if start_date > end_date:
+        raise SepaApiError("La fecha inicial no puede ser posterior a la fecha final.")
+
+    resources_by_date: dict[date, list[SepaResource]] = {}
+    for resource in resources:
+        if not resource.is_zip or not resource.url:
+            continue
+
+        publication_date = _resource_publication_date(resource)
+        if publication_date is None or not start_date <= publication_date <= end_date:
+            continue
+
+        resources_by_date.setdefault(publication_date, []).append(resource)
+
+    return [
+        (publication_date, max(dated_resources, key=_resource_sort_key))
+        for publication_date, dated_resources in sorted(resources_by_date.items())
+    ]
+
+
+def recent_zip_resources(
+    resources: list[SepaResource],
+    days: int,
+    *,
+    reference_date: date | None = None,
+) -> list[tuple[date, SepaResource]]:
+    """Devuelve recursos ZIP para los ultimos dias disponibles."""
+
+    if days < 1:
+        raise SepaApiError("La cantidad de dias debe ser mayor o igual a 1.")
+
+    available_dates = list_available_dates(resources)
+    if not available_dates:
+        raise SepaApiError("No se encontraron fechas disponibles en recursos ZIP.")
+
+    end_date = reference_date or max(available_dates)
+    start_date = end_date - timedelta(days=days - 1)
+    return zip_resources_between_dates(resources, start_date, end_date)
 
 
 def list_available_dates(resources: list[SepaResource]) -> list[date]:
@@ -346,21 +393,41 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--last-days",
+        type=int,
+        help=(
+            "Lista las fechas disponibles dentro de los ultimos N dias "
+            "tomando como referencia la publicacion mas reciente."
+        ),
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Sobrescribe el archivo local si ya existe.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.last_days is not None and args.last_days < 1:
+        parser.error("--last-days debe ser mayor o igual a 1.")
+    return args
 
 
 def main() -> None:
     args = parse_args()
 
     resources = list_resources(args.dataset_id)
+    if args.last_days is not None:
+        for publication_date, _resource in recent_zip_resources(resources, args.last_days):
+            print(publication_date.isoformat())
+
     if args.list_dates:
         _print_available_dates(resources)
 
-    if args.list or (not args.list_dates and not args.download and args.date is None):
+    if args.list or (
+        not args.list_dates
+        and not args.download
+        and args.date is None
+        and args.last_days is None
+    ):
         _print_resources(resources)
 
     if args.download or args.date is not None:

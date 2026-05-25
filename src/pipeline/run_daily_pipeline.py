@@ -14,8 +14,11 @@ from src.analysis.create_dashboard_tables import (
 from src.extract.sepa_api import (
     DEFAULT_RAW_DIR,
     SEPA_MINORISTAS_DATASET,
+    download_resource,
     download_latest_zip,
     download_zip_for_date,
+    list_resources,
+    recent_zip_resources,
 )
 from src.load.load_duckdb import load_zip_to_duckdb, parse_publication_date
 
@@ -37,6 +40,14 @@ def parse_args() -> argparse.Namespace:
         "--zip",
         type=Path,
         help="ZIP principal ya descargado. Si se informa, no se descarga desde CKAN.",
+    )
+    parser.add_argument(
+        "--last-days",
+        type=int,
+        help=(
+            "Descarga y carga las publicaciones disponibles de los ultimos N dias, "
+            "tomando como referencia la fecha mas reciente publicada por SEPA."
+        ),
     )
     parser.add_argument(
         "--dataset-id",
@@ -92,7 +103,24 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DUCKDB_THREADS,
         help="Threads DuckDB para crear marts. Default: %(default)s.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    validate_args(parser, args)
+    return args
+
+
+def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    selected_sources = sum(
+        [
+            args.zip is not None,
+            args.date is not None,
+            args.last_days is not None,
+        ]
+    )
+    if selected_sources > 1:
+        parser.error("usar solo una opcion entre --zip, --date o --last-days.")
+
+    if args.last_days is not None and args.last_days < 1:
+        parser.error("--last-days debe ser mayor o igual a 1.")
 
 
 def resolve_zip_path(
@@ -125,23 +153,87 @@ def resolve_zip_path(
     )
 
 
+def resolve_recent_zip_paths(
+    *,
+    days: int,
+    dataset_id: str,
+    raw_dir: Path,
+    overwrite_download: bool,
+) -> list[tuple[date, Path]]:
+    print(f"Buscando publicaciones SEPA disponibles para los ultimos {days} dias...")
+    resources = list_resources(dataset_id)
+    recent_resources = recent_zip_resources(resources, days)
+    if not recent_resources:
+        raise RuntimeError(f"No se encontraron ZIPs SEPA para los ultimos {days} dias.")
+
+    print(f"Publicaciones detectadas: {len(recent_resources)}")
+    zip_paths: list[tuple[date, Path]] = []
+    for publication_date, resource in recent_resources:
+        print(f"Descargando ZIP SEPA para fecha {publication_date.isoformat()}...")
+        zip_paths.append(
+            (
+                publication_date,
+                download_resource(
+                    resource,
+                    output_dir=raw_dir,
+                    overwrite=overwrite_download,
+                ),
+            )
+        )
+    return zip_paths
+
+
+def load_zip_paths(
+    *,
+    zip_paths: list[tuple[date | None, Path]],
+    db_path: Path,
+    replace_db: bool,
+    reload_existing_dates: bool,
+) -> dict[str, int]:
+    total_counts: dict[str, int] = {}
+    for index, (publication_date, zip_path) in enumerate(zip_paths, start=1):
+        should_replace = replace_db and index == 1
+        print()
+        print(f"Cargando {index}/{len(zip_paths)}: {zip_path}")
+        counts = load_zip_to_duckdb(
+            zip_path=zip_path,
+            db_path=db_path,
+            replace=should_replace,
+            publication_date=publication_date,
+            reload_existing_dates=reload_existing_dates,
+        )
+        for table_name, count in counts.items():
+            total_counts[table_name] = total_counts.get(table_name, 0) + count
+
+    return total_counts
+
+
 def main() -> None:
     args = parse_args()
-    zip_path = resolve_zip_path(
-        zip_path=args.zip,
-        publication_date=args.date,
-        dataset_id=args.dataset_id,
-        raw_dir=args.raw_dir,
-        overwrite_download=args.overwrite_download,
-    )
 
-    print(f"ZIP principal: {zip_path}")
+    if args.last_days is not None:
+        zip_paths = resolve_recent_zip_paths(
+            days=args.last_days,
+            dataset_id=args.dataset_id,
+            raw_dir=args.raw_dir,
+            overwrite_download=args.overwrite_download,
+        )
+    else:
+        zip_path = resolve_zip_path(
+            zip_path=args.zip,
+            publication_date=args.date,
+            dataset_id=args.dataset_id,
+            raw_dir=args.raw_dir,
+            overwrite_download=args.overwrite_download,
+        )
+        zip_paths = [(args.date, zip_path)]
+
+    print(f"ZIPs principales: {len(zip_paths)}")
     print(f"Base DuckDB: {args.db}")
-    counts = load_zip_to_duckdb(
-        zip_path=zip_path,
+    counts = load_zip_paths(
+        zip_paths=zip_paths,
         db_path=args.db,
-        replace=args.replace_db,
-        publication_date=args.date,
+        replace_db=args.replace_db,
         reload_existing_dates=args.reload_existing_dates,
     )
 
