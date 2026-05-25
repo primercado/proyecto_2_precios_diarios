@@ -32,3 +32,27 @@ Dashboard en Power BI
 
 - [Extractor SEPA desde CKAN](docs/01_extractor_sepa_api.md)
 - [Estructura observada de archivos SEPA](docs/02_estructura_archivos_sepa.md)
+
+## Capa analítica para dashboard
+
+La capa analítica crea tablas resumen en DuckDB para que un futuro dashboard en Power BI no consuma directamente los millones de filas de `fact_precios`. Los marts quedan materializados en la base local y se exportan a `data/processed/dashboard/` como CSV y, si está disponible, Parquet.
+
+Crear marts:
+
+```bash
+python -m src.analysis.create_dashboard_tables --db data/processed/precios_diarios.duckdb
+```
+
+Crear marts indicando directorio de salida:
+
+```bash
+python -m src.analysis.create_dashboard_tables \
+  --db data/processed/precios_diarios.duckdb \
+  --output-dir data/processed/dashboard
+```
+
+Referencias:
+
+- [Consultas SQL para dashboard](sql/04_queries_dashboard_duckdb.sql)
+- [Script de creación de marts](src/analysis/create_dashboard_tables.py)
+- [Documentación de la capa analítica](docs/04_capa_analitica_dashboard.md)
