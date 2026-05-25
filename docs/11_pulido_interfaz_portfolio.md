@@ -8,7 +8,8 @@ Esta etapa mejora la presentación del dashboard Streamlit para usarlo como piez
 
 - Menú lateral reorganizado con nombres de secciones más limpios, sin letras iniciales.
 - Corrección de tildes en secciones visibles: ubicación, básica, exploratoria, comparación, evolución y georreferenciadas.
-- Estética oscura, limpia y profesional mediante CSS personalizado.
+- Estética clara, limpia y profesional mediante CSS personalizado.
+- Portada inicial con panel de presentación, stack técnico y métricas principales.
 - Mejoras en títulos, subtítulos, separadores, tarjetas métricas, contenedores y mensajes de advertencia.
 - Métricas con formato más legible para enteros, precios y porcentajes.
 

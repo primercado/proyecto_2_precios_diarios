@@ -129,24 +129,56 @@ st.markdown(
     """
     <style>
     :root {
-        --portfolio-bg: #0f172a;
-        --portfolio-panel: rgba(15, 23, 42, 0.72);
-        --portfolio-panel-border: rgba(148, 163, 184, 0.18);
-        --portfolio-text-muted: #94a3b8;
-        --portfolio-accent: #38bdf8;
+        --portfolio-bg: #f7f8fa;
+        --portfolio-panel: #ffffff;
+        --portfolio-panel-border: #d8dee8;
+        --portfolio-text: #18212f;
+        --portfolio-text-muted: #64748b;
+        --portfolio-accent: #0f766e;
+        --portfolio-accent-soft: #e6fffb;
     }
     .stApp {
-        background:
-            radial-gradient(circle at top left, rgba(56, 189, 248, 0.10), transparent 30rem),
-            linear-gradient(180deg, #0b1120 0%, #111827 100%);
+        background: var(--portfolio-bg);
+        color: var(--portfolio-text);
+    }
+    .stApp,
+    .stApp p,
+    .stApp span,
+    .stApp label,
+    .stApp div,
+    .stApp li,
+    .stApp h1,
+    .stApp h2,
+    .stApp h3,
+    .stApp h4,
+    .stApp h5,
+    .stApp h6,
+    .stMarkdown,
+    .stCaptionContainer,
+    [data-testid="stMarkdownContainer"],
+    [data-testid="stWidgetLabel"],
+    [data-testid="stSidebar"] {
+        color: var(--portfolio-text);
+    }
+    [data-testid="stCaptionContainer"],
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stMarkdownContainer"] small {
+        color: var(--portfolio-text-muted);
     }
     .block-container {padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1320px;}
     h1, h2, h3 {letter-spacing: 0;}
-    h1 {font-size: 2.15rem; margin-bottom: 0.25rem;}
+    h1 {font-size: 2.05rem; margin-bottom: 0.2rem;}
     h2, h3 {margin-top: 0.8rem;}
     section[data-testid="stSidebar"] {
-        background: rgba(2, 6, 23, 0.88);
+        background: #ffffff;
         border-right: 1px solid var(--portfolio-panel-border);
+    }
+    .hero-panel {
+        background: linear-gradient(135deg, #ffffff 0%, var(--portfolio-accent-soft) 100%);
+        border: 1px solid var(--portfolio-panel-border);
+        border-radius: 8px;
+        padding: 1.2rem 1.25rem;
+        margin: 0.75rem 0 1rem 0;
     }
     .section-card {
         background: var(--portfolio-panel);
@@ -155,14 +187,34 @@ st.markdown(
         padding: 1rem 1.1rem;
         margin: 0.75rem 0 1rem 0;
     }
-    .section-card p, .section-card li {color: #cbd5e1;}
+    .section-card p, .section-card li, .hero-panel p {color: #334155;}
     .muted {color: var(--portfolio-text-muted);}
     div[data-testid="stMetric"] {
-        background: rgba(15, 23, 42, 0.86);
+        background: #ffffff;
         border: 1px solid var(--portfolio-panel-border);
         border-radius: 8px;
         padding: 0.85rem 0.95rem;
-        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    }
+    div[data-testid="stMetric"],
+    div[data-testid="stMetric"] label,
+    div[data-testid="stMetric"] p,
+    div[data-testid="stMetric"] div {
+        color: var(--portfolio-text);
+    }
+    div[data-testid="stMetricLabel"] {
+        color: var(--portfolio-text-muted);
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.35rem;
+        color: var(--portfolio-text);
+    }
+    input,
+    textarea,
+    [data-baseweb="select"] div,
+    [data-baseweb="input"] input {
+        color: var(--portfolio-text);
+        background: #ffffff;
     }
     div[data-testid="stDataFrame"] {
         border: 1px solid var(--portfolio-panel-border);
@@ -175,6 +227,13 @@ st.markdown(
     }
     hr {
         border-color: rgba(148, 163, 184, 0.20);
+    }
+    .sidebar-note {
+        border-top: 1px solid var(--portfolio-panel-border);
+        margin-top: 1rem;
+        padding-top: 0.8rem;
+        color: var(--portfolio-text-muted);
+        font-size: 0.9rem;
     }
     </style>
     """,
@@ -303,7 +362,7 @@ def render_sidebar(
     con: duckdb.DuckDBPyConnection,
     db_status: str,
 ) -> tuple[str, str, str | None, str | None]:
-    st.sidebar.header("Datos")
+    st.sidebar.header("Precios SEPA")
     st.sidebar.write(f"Estado de la base: **{db_status}**")
     date_options = get_publication_dates(con)
     selected_date = st.sidebar.selectbox(
@@ -328,6 +387,15 @@ def render_sidebar(
                 ascending_dates,
                 index=len(ascending_dates) - 1,
             )
+    st.sidebar.markdown(
+        """
+        <div class="sidebar-note">
+            Dashboard local sobre marts analíticos en DuckDB. La base se abre en
+            modo solo lectura.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     return section, selected_date, comparison_start, comparison_end
 
 
@@ -342,8 +410,15 @@ def render_plotly_bar(
         return
     if data.empty:
         return
-    fig = px.bar(data, x=x, y=y, title=title)
-    fig.update_layout(xaxis_tickangle=-35)
+    fig = px.bar(data, x=x, y=y, title=title, color_discrete_sequence=["#0f766e"])
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font_color="#18212f",
+        xaxis_tickangle=-35,
+        margin=dict(l=20, r=20, t=60, b=80),
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -359,8 +434,24 @@ def render_plotly_horizontal_bar(
     if data.empty:
         return
     chart_df = data.sort_values(x)
-    fig = px.bar(chart_df, x=x, y=y, orientation="h", title=title)
-    fig.update_layout(height=520, yaxis_title="", xaxis_title="")
+    fig = px.bar(
+        chart_df,
+        x=x,
+        y=y,
+        orientation="h",
+        title=title,
+        color_discrete_sequence=["#0f766e"],
+    )
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font_color="#18212f",
+        height=520,
+        yaxis_title="",
+        xaxis_title="",
+        margin=dict(l=20, r=20, t=60, b=40),
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -373,19 +464,19 @@ def render_comparability_warning() -> None:
 
 
 def render_about_project(con: duckdb.DuckDBPyConnection, selected_date: str) -> None:
-    st.title("Comparador de precios diarios SEPA")
+    st.title("Precios Diarios SEPA Argentina")
     st.markdown(
         """
-        <div class="section-card">
+        <div class="hero-panel">
+            <p class="muted">Pipeline de datos y dashboard interactivo</p>
             <p>
-                Proyecto exploratorio para analizar precios diarios de supermercados
-                publicados por SEPA Argentina. La app permite consultar productos,
-                comparar comercios y ubicaciones, revisar promociones, observar
-                evolución temporal y detectar posibles problemas de calidad.
+                Análisis local de precios diarios de supermercados publicados por
+                SEPA Argentina. El proyecto integra extracción, carga incremental
+                en DuckDB, marts analíticos y una app Streamlit para explorar
+                productos, comercios, ubicaciones y variaciones entre fechas.
             </p>
             <p class="muted">
-                Fuente: datos oficiales SEPA Argentina. Tecnologías: Python,
-                DuckDB, Streamlit, Pandas y Plotly.
+                Stack: Python, DuckDB, Streamlit, Pandas, Plotly y SQL.
             </p>
         </div>
         """,
@@ -1189,7 +1280,16 @@ def render_product_evolution(con: duckdb.DuckDBPyConnection) -> None:
         markers=True,
         title="Precio del producto por fecha",
     )
-    fig.update_layout(height=520, xaxis_title="Fecha", yaxis_title="Precio")
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font_color="#18212f",
+        height=520,
+        xaxis_title="Fecha",
+        yaxis_title="Precio",
+        margin=dict(l=20, r=20, t=60, b=40),
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -1384,7 +1484,13 @@ def main() -> None:
 
     if section == "Sobre el proyecto":
         render_about_project(con, selected_date)
-    elif section == "Resumen general":
+        return
+
+    st.title("Precios Diarios SEPA Argentina")
+    st.caption(f"Sección: {section} | Fecha seleccionada: {selected_date}")
+    st.divider()
+
+    if section == "Resumen general":
         render_summary(con, selected_date)
     elif section == "Precios por comercio":
         render_prices_by_store(con, selected_date)

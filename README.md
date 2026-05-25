@@ -1,106 +1,200 @@
-# Proyecto 2: Precios Diarios de Supermercados
+# Precios Diarios SEPA Argentina
 
-## Descripción
+Pipeline de datos y dashboard interactivo para analizar precios diarios de supermercados a partir de datos oficiales SEPA.
 
-Este proyecto tiene como objetivo crear una aplicación que compare diariamente los precios de productos de supermercados en Argentina, utilizando como fuente principal los datos abiertos del sistema SEPA.
+## Descripción breve
 
-La idea es construir un flujo de trabajo que permita extraer datos desde la API o fuente oficial de SEPA, almacenarlos en una base de datos analítica como DuckDB o PostgreSQL, analizarlos con Python y visualizar los resultados en un dashboard desarrollado con Power BI.
+Este proyecto descarga, limpia, carga y analiza publicaciones diarias de precios de supermercados de Argentina usando datos oficiales de SEPA. El flujo está pensado para trabajar localmente con archivos diarios grandes, cargar millones de registros en DuckDB y exponer una capa analítica liviana para exploración.
 
-## Objetivo principal
+El problema que aborda es la dificultad de comparar precios entre fechas, comercios, ubicaciones y productos cuando la fuente original llega como archivos masivos y poco cómodos para consulta directa. El proyecto transforma esos datos en tablas analíticas preparadas para responder preguntas de evolución temporal, dispersión de precios, promociones y calidad de datos.
 
-Crear una aplicación que permita comparar diariamente precios de supermercados, analizar su evolución y generar visualizaciones útiles para detectar variaciones, diferencias entre comercios y cambios en productos seleccionados.
+Es un proyecto de portfolio de análisis e ingeniería de datos. Muestra un pipeline incremental reproducible, una base analítica local, marts orientados a dashboard y una app Streamlit para explorar resultados sin consultar directamente las tablas transaccionales más pesadas.
 
-## Flujo general del proyecto
+Estado local actual: la base `data/processed/precios_diarios.duckdb` contiene publicaciones de `2026-05-21` a `2026-05-25`, con más de 75 millones de registros de precios procesados.
+
+## Funcionalidades principales
+
+- Descarga de datos desde CKAN/SEPA.
+- Procesamiento de ZIPs anidados.
+- Limpieza de archivos `comercio.csv`, `productos.csv` y `sucursales.csv`.
+- Carga incremental en DuckDB.
+- Control de ingestas.
+- Generación de marts analíticos.
+- Dashboard local en Streamlit.
+- Comparación entre fechas.
+- Evolución temporal de productos.
+- Detección exploratoria de precios sospechosos.
+- Canasta básica exploratoria.
+
+## Arquitectura del proyecto
 
 ```text
-Fuente SEPA
+CKAN / SEPA
     ↓
-Extracción diaria de datos
+Descarga de ZIP diario
     ↓
-Guardado de datos crudos
+Inspección y limpieza
     ↓
-Limpieza y transformación con Python
+DuckDB
     ↓
-Carga en DuckDB o PostgreSQL
+Marts analíticos
     ↓
-Análisis con Python y SQL
-    ↓
-Dashboard en Power BI
+Dashboard Streamlit
 ```
 
-## Pipeline historico incremental
+## Estructura del repositorio
 
-El proyecto puede cargar varios dias en la misma base DuckDB sin duplicar fechas ya procesadas. Cada ejecucion queda registrada en `control_ingestas`.
+```text
+app/
+  dashboard_precios.py              # Dashboard local en Streamlit
+docs/
+  01_extractor_sepa_api.md          # Documentación del extractor CKAN/SEPA
+  02_estructura_archivos_sepa.md    # Estructura observada de archivos fuente
+  03_pipeline_limpieza_carga_duckdb.md
+  04_capa_analitica_dashboard.md
+  05_app_streamlit_dashboard.md
+  10_evolucion_temporal_dashboard.md
+  11_pulido_interfaz_portfolio.md
+  12_guia_uso_local.md
+sql/
+  01_create_tables_duckdb.sql
+  04_queries_dashboard_duckdb.sql
+  05_queries_calidad_precios.sql
+  06_queries_evolucion_temporal.sql
+src/
+  extract/sepa_api.py               # Descarga y listado de recursos SEPA
+  load/load_duckdb.py               # Limpieza y carga incremental en DuckDB
+  pipeline/run_daily_pipeline.py    # Orquestación diaria por fecha
+  analysis/create_dashboard_tables.py
+data/
+  raw/                              # ZIPs diarios descargados o provistos localmente
+  processed/                        # DuckDB local y exports de marts
+```
 
-Ejecutar pipeline completo para una fecha:
+## Stack técnico
+
+- Python
+- DuckDB
+- Pandas
+- Polars
+- Streamlit
+- Plotly
+- CKAN API
+- SQL
+
+## Instalación
+
+Crear y activar un entorno virtual:
 
 ```bash
-python -m src.pipeline.run_daily_pipeline --date 2026-05-23
+python -m venv .venv
+source .venv/bin/activate
 ```
 
-Usar un ZIP ya descargado:
+Instalar dependencias:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+## Uso rápido
+
+Ejecutar el dashboard local si la base DuckDB y los marts ya existen:
+
+```bash
+streamlit run app/dashboard_precios.py
+```
+
+URL esperada:
+
+```text
+http://localhost:8501
+```
+
+## Flujo de carga por fecha
+
+Listar fechas disponibles publicadas por SEPA:
+
+```bash
+python -m src.extract.sepa_api --list-dates
+```
+
+Ejecutar el pipeline completo para una fecha:
+
+```bash
+python -m src.pipeline.run_daily_pipeline --date 2026-05-24
+```
+
+Cargar las publicaciones disponibles de los últimos 5 días para poblar mejor el dashboard sin volver demasiado pesada la base local:
+
+```bash
+python -m src.pipeline.run_daily_pipeline --last-days 5
+```
+
+Usar un ZIP ya descargado localmente:
 
 ```bash
 python -m src.pipeline.run_daily_pipeline \
-  --date 2026-05-23 \
-  --zip data/raw/sepa_2026-05-23.zip
+  --date 2026-05-24 \
+  --zip data/raw/sepa_2026-05-24.zip
 ```
 
-Si una fecha ya existe, la carga incremental la omite. Para rehacer una fecha:
+Si una fecha ya existe, la carga incremental la omite. Para reconstruir una fecha:
 
 ```bash
 python -m src.pipeline.run_daily_pipeline \
-  --date 2026-05-23 \
+  --date 2026-05-24 \
   --reload-existing-dates
 ```
 
-Comandos por etapa:
+## Carga manual por etapa
+
+Descargar datos desde SEPA:
 
 ```bash
-python -m src.extract.sepa_api --list
-python -m src.extract.sepa_api --list-dates
-python -m src.extract.sepa_api --download
-python -m src.extract.sepa_api --date 2026-05-23
+python -m src.extract.sepa_api --date 2026-05-24
+```
 
+Cargar un ZIP en DuckDB:
+
+```bash
 python -m src.load.load_duckdb \
-  --zip data/raw/sepa_2026-05-23.zip \
+  --zip data/raw/sepa_2026-05-24.zip \
   --db data/processed/precios_diarios.duckdb \
   --append \
-  --date 2026-05-23
+  --date 2026-05-24
 ```
 
-## Documentación técnica
-
-- [Extractor SEPA desde CKAN](docs/01_extractor_sepa_api.md)
-- [Estructura observada de archivos SEPA](docs/02_estructura_archivos_sepa.md)
-
-## Capa analítica para dashboard
-
-La capa analítica crea tablas resumen en DuckDB para que un futuro dashboard en Power BI no consuma directamente los millones de filas de `fact_precios`. Los marts quedan materializados en la base local y se exportan a `data/processed/dashboard/` como CSV y, si está disponible, Parquet.
-
-Crear marts:
+Crear o actualizar marts analíticos:
 
 ```bash
-python -m src.analysis.create_dashboard_tables --db data/processed/precios_diarios.duckdb
+python -m src.analysis.create_dashboard_tables \
+  --db data/processed/precios_diarios.duckdb
 ```
 
-Crear marts indicando directorio de salida:
+Crear un mart puntual:
 
 ```bash
 python -m src.analysis.create_dashboard_tables \
   --db data/processed/precios_diarios.duckdb \
-  --output-dir data/processed/dashboard
+  --only-mart mart_variacion_productos
 ```
 
-Referencias:
+## Dashboard Streamlit
 
-- [Consultas SQL para dashboard](sql/04_queries_dashboard_duckdb.sql)
-- [Script de creación de marts](src/analysis/create_dashboard_tables.py)
-- [Documentación de la capa analítica](docs/04_capa_analitica_dashboard.md)
+La app consulta tablas `mart_*` materializadas en DuckDB y abre la base en modo solo lectura. Incluye:
 
-## App local en Streamlit
-
-El proyecto incluye una primera app local en Streamlit para explorar desde el navegador los marts analiticos generados en DuckDB.
+- Vista de presentación del proyecto.
+- Resumen general por fecha.
+- Precios por comercio y ubicación.
+- Buscador simple y buscador avanzado de productos.
+- Promociones.
+- Productos con mayor dispersión de precios.
+- Sucursales georreferenciadas.
+- Calidad de precios.
+- Canasta básica exploratoria.
+- Comparación entre fechas.
+- Evolución temporal de producto.
 
 Ejecutar:
 
@@ -108,78 +202,31 @@ Ejecutar:
 streamlit run app/dashboard_precios.py
 ```
 
-Referencias:
+## Datos y limitaciones
 
-- [App Streamlit](app/dashboard_precios.py)
-- [Documentacion de la app local](docs/05_app_streamlit_dashboard.md)
+- La fuente es SEPA Argentina a través de CKAN.
+- El proyecto no modifica los datos crudos descargados.
+- Las reglas de calidad son exploratorias: marcan casos para revisar, no corrigen precios automáticamente.
+- La canasta básica exploratoria se basa en búsquedas por texto y no representa una canasta oficial.
+- Las comparaciones entre productos dependen de la consistencia de descripciones, marcas, presentaciones y unidades de medida publicadas.
+- El dashboard está pensado para ejecución local, no como aplicación productiva con autenticación o despliegue público.
 
-## Evolución temporal y comparación entre fechas
+## Documentación
 
-La app Streamlit incluye secciones para comparar dos fechas, ver productos que
-mas subieron o bajaron y revisar la evolucion de un producto seleccionado. Estas
-vistas usan marts materializados en DuckDB para no consultar `fact_precios`
-directamente desde la app.
-
-Crear mart de evolucion por producto:
-
-```bash
-python -m src.analysis.create_dashboard_tables --db data/processed/precios_diarios.duckdb --only-mart mart_evolucion_productos
-```
-
-Crear mart de variacion contra la fecha anterior disponible:
-
-```bash
-python -m src.analysis.create_dashboard_tables --db data/processed/precios_diarios.duckdb --only-mart mart_variacion_productos
-```
-
-Ejecutar la app:
-
-```bash
-streamlit run app/dashboard_precios.py
-```
-
-Referencia:
-
-- [Evolucion temporal en el dashboard](docs/10_evolucion_temporal_dashboard.md)
-
-## Calidad de precios y canasta exploratoria
-
-El dashboard suma reglas iniciales de calidad para marcar precios sospechosos,
-un buscador avanzado de productos comparables y una primera canasta exploratoria
-basada en busquedas por texto.
-
-Referencias:
-
+- [Guía de uso local](docs/12_guia_uso_local.md)
+- [Extractor SEPA desde CKAN](docs/01_extractor_sepa_api.md)
+- [Estructura observada de archivos SEPA](docs/02_estructura_archivos_sepa.md)
+- [Pipeline de limpieza y carga en DuckDB](docs/03_pipeline_limpieza_carga_duckdb.md)
+- [Capa analítica para dashboard](docs/04_capa_analitica_dashboard.md)
+- [App local en Streamlit](docs/05_app_streamlit_dashboard.md)
 - [Reglas de calidad de precios](docs/06_reglas_calidad_precios.md)
-- [Mejoras del dashboard de calidad y canasta](docs/07_mejoras_dashboard_calidad_canasta.md)
-- [Consultas SQL de calidad](sql/05_queries_calidad_precios.sql)
-
-## Presentación para portfolio
-
-La app Streamlit funciona como comparador exploratorio de precios diarios SEPA para mostrar el proyecto en GitHub y LinkedIn. Permite recorrer métricas generales, comparar comercios y ubicaciones, buscar productos, detectar promociones, revisar calidad de datos y analizar cambios entre fechas.
-
-Secciones principales de la app:
-
-- Sobre el proyecto
-- Resumen general
-- Precios por comercio
-- Buscador de productos
-- Precios por ubicación
-- Promociones
-- Mayor dispersión
-- Sucursales georreferenciadas
-- Calidad de precios
-- Buscador avanzado
-- Canasta básica exploratoria
-- Comparación entre fechas
-- Evolución de producto
-
-Ejecutar:
-
-```bash
-streamlit run app/dashboard_precios.py
-```
-
-Referencia:
-
+- [Mejoras de dashboard: calidad y canasta](docs/07_mejoras_dashboard_calidad_canasta.md)
+- [Evolución temporal en el dashboard](docs/10_evolucion_temporal_dashboard.md)
 - [Pulido de interfaz para portfolio](docs/11_pulido_interfaz_portfolio.md)
+
+## Próximos pasos posibles
+
+- Sumar más fechas para mejorar el análisis temporal.
+- Refinar reglas de comparación entre productos equivalentes.
+- Agregar capturas de pantalla al README.
+- Preparar una publicación técnica para LinkedIn con decisiones de arquitectura y resultados.

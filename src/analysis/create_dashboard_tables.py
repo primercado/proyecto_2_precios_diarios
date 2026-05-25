@@ -25,7 +25,8 @@ MART_QUERIES: dict[str, str] = {
             COUNT(DISTINCT hash(f.id_comercio, f.id_bandera)) AS cantidad_banderas,
             COUNT(DISTINCT hash(f.id_comercio, f.id_bandera, f.id_sucursal)) AS cantidad_sucursales,
             COUNT(DISTINCT s.sucursales_provincia) AS cantidad_provincias,
-            COUNT(DISTINCT s.sucursales_localidad) AS cantidad_localidades
+            COUNT(DISTINCT s.sucursales_localidad) AS cantidad_localidades,
+            AVG(f.productos_precio_lista) AS precio_promedio_general
         FROM fact_precios AS f
         LEFT JOIN dim_sucursales AS s
             ON f.fecha_publicacion = s.fecha_publicacion
@@ -33,6 +34,88 @@ MART_QUERIES: dict[str, str] = {
             AND f.id_bandera = s.id_bandera
             AND f.id_sucursal = s.id_sucursal
         GROUP BY f.fecha_publicacion
+    """,
+    "mart_evolucion_productos": """
+        CREATE OR REPLACE TABLE mart_evolucion_productos AS
+        SELECT
+            f.fecha_publicacion,
+            f.id_producto,
+            f.productos_descripcion,
+            f.productos_marca,
+            f.productos_cantidad_presentacion,
+            f.productos_unidad_medida_presentacion,
+            COUNT(*) AS cantidad_registros,
+            MIN(f.productos_precio_lista) AS precio_minimo,
+            MAX(f.productos_precio_lista) AS precio_maximo,
+            AVG(f.productos_precio_lista) AS precio_promedio,
+            AVG(f.productos_precio_referencia) AS precio_referencia_promedio
+        FROM fact_precios AS f
+        WHERE f.productos_precio_lista IS NOT NULL
+        GROUP BY
+            f.fecha_publicacion,
+            f.id_producto,
+            f.productos_descripcion,
+            f.productos_marca,
+            f.productos_cantidad_presentacion,
+            f.productos_unidad_medida_presentacion
+    """,
+    "mart_variacion_productos": """
+        CREATE OR REPLACE TABLE mart_variacion_productos AS
+        WITH pares_fechas AS (
+            SELECT
+                actual.fecha_publicacion,
+                MAX(anterior.fecha_publicacion) AS fecha_anterior,
+                actual.id_producto,
+                actual.productos_descripcion,
+                actual.productos_marca,
+                actual.productos_cantidad_presentacion,
+                actual.productos_unidad_medida_presentacion,
+                actual.precio_promedio AS precio_promedio_actual,
+                actual.cantidad_registros AS cantidad_registros_actual
+            FROM mart_evolucion_productos AS actual
+            INNER JOIN mart_evolucion_productos AS anterior
+                ON actual.id_producto = anterior.id_producto
+                AND actual.productos_descripcion IS NOT DISTINCT FROM anterior.productos_descripcion
+                AND actual.productos_marca IS NOT DISTINCT FROM anterior.productos_marca
+                AND actual.productos_cantidad_presentacion IS NOT DISTINCT FROM anterior.productos_cantidad_presentacion
+                AND actual.productos_unidad_medida_presentacion IS NOT DISTINCT FROM anterior.productos_unidad_medida_presentacion
+                AND anterior.fecha_publicacion < actual.fecha_publicacion
+            GROUP BY
+                actual.fecha_publicacion,
+                actual.id_producto,
+                actual.productos_descripcion,
+                actual.productos_marca,
+                actual.productos_cantidad_presentacion,
+                actual.productos_unidad_medida_presentacion,
+                actual.precio_promedio,
+                actual.cantidad_registros
+        )
+        SELECT
+            pares.fecha_publicacion,
+            pares.fecha_anterior,
+            pares.id_producto,
+            pares.productos_descripcion,
+            pares.productos_marca,
+            pares.productos_cantidad_presentacion,
+            pares.productos_unidad_medida_presentacion,
+            pares.precio_promedio_actual,
+            anterior.precio_promedio AS precio_promedio_anterior,
+            pares.precio_promedio_actual - anterior.precio_promedio AS variacion_absoluta,
+            CASE
+                WHEN anterior.precio_promedio > 0
+                    THEN ((pares.precio_promedio_actual - anterior.precio_promedio) / anterior.precio_promedio) * 100
+                ELSE NULL
+            END AS variacion_porcentual,
+            pares.cantidad_registros_actual,
+            anterior.cantidad_registros AS cantidad_registros_anterior
+        FROM pares_fechas AS pares
+        INNER JOIN mart_evolucion_productos AS anterior
+            ON pares.fecha_anterior = anterior.fecha_publicacion
+            AND pares.id_producto = anterior.id_producto
+            AND pares.productos_descripcion IS NOT DISTINCT FROM anterior.productos_descripcion
+            AND pares.productos_marca IS NOT DISTINCT FROM anterior.productos_marca
+            AND pares.productos_cantidad_presentacion IS NOT DISTINCT FROM anterior.productos_cantidad_presentacion
+            AND pares.productos_unidad_medida_presentacion IS NOT DISTINCT FROM anterior.productos_unidad_medida_presentacion
     """,
     "mart_resumen_productos": """
         CREATE OR REPLACE TABLE mart_resumen_productos AS
@@ -303,6 +386,10 @@ MART_QUERIES: dict[str, str] = {
     """,
 }
 
+MART_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "mart_variacion_productos": ("mart_evolucion_productos",),
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -389,6 +476,17 @@ def create_mart(con: duckdb.DuckDBPyConnection, mart_name: str, query: str) -> i
     return int(row_count)
 
 
+def get_queries_to_run(only_mart: str | None) -> dict[str, str]:
+    if only_mart is None:
+        return MART_QUERIES
+
+    queries: dict[str, str] = {}
+    for dependency in MART_DEPENDENCIES.get(only_mart, ()):
+        queries[dependency] = MART_QUERIES[dependency]
+    queries[only_mart] = MART_QUERIES[only_mart]
+    return queries
+
+
 def export_mart(con: duckdb.DuckDBPyConnection, mart_name: str, output_dir: Path) -> None:
     csv_path = output_dir / f"{mart_name}.csv"
     parquet_path = output_dir / f"{mart_name}.parquet"
@@ -418,9 +516,7 @@ def create_dashboard_tables(
     with duckdb.connect(str(db_path)) as con:
         configure_duckdb_connection(con, DUCKDB_TEMP_DIRECTORY, memory_limit, threads)
         validate_required_tables(con)
-        selected_queries = (
-            {only_mart: MART_QUERIES[only_mart]} if only_mart else MART_QUERIES
-        )
+        selected_queries = get_queries_to_run(only_mart)
         for mart_name, query in selected_queries.items():
             row_counts[mart_name] = create_mart(con, mart_name, query)
             export_mart(con, mart_name, output_dir)
